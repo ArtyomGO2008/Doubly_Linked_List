@@ -24,12 +24,12 @@ bool ListVerify (const List* list)
         if (list->head == 0 || list->tail == 0) return false;
     }
 
-    for (int i = 1; i <= list->capacity; i++)
+    for (int i = 0; i <= list->capacity; i++)
     {
         if (list->next[i] < 0  || list->capacity < list->next[i]) return false;
         if (list->prev[i] < -1 || list->capacity < list->prev[i]) return false;
 
-        if (list->next[i] > 0 && list->prev[i] > 0)
+        if (list->data[i] != POISON )
         {
             if (list->prev[list->next[i]] != i) return false;
             if (list->next[list->prev[i]] != i) return false;
@@ -40,7 +40,6 @@ bool ListVerify (const List* list)
     }
 
     if (list->data[0] != POISON ) return false;
-    if (list->next[0] != 0 || list->prev[0] != 0) return false;
 
     for (int i = 1; i <= list->capacity; i++)
     {
@@ -68,14 +67,18 @@ bool ListVerify (const List* list)
 
     if (list->size + count_free != list->capacity) return false;
 
+//=============== проверка на циклы и потерю узлов ===============
     int* seen = (int*)calloc(list->capacity + 1, sizeof(int));
 
     if (!seen)
         return false;
 
-    count_used = 0;
     int next_elem = 0;
     int prev_elem = 0;
+
+// считаем использованные элементы и проверяем на циклы основной список
+
+    count_used = 0;
 
     for (int i = list->head; i != 0;)
     {
@@ -87,7 +90,7 @@ bool ListVerify (const List* list)
         next_elem = list->next[i];
 
         if (next_elem < 0 || next_elem > list->capacity ||
-            next_elem != 0 && list->prev[next_elem] != i)
+            (next_elem != 0 && list->prev[next_elem] != i))
             return false;
 
         prev_elem = i;
@@ -98,6 +101,8 @@ bool ListVerify (const List* list)
 
     if (count_used != list->size || prev_elem != list->tail)
         return false;
+
+// считаем свободные элементы и проверяем на циклы список свободных элементов
 
     count_free = 0;
 
@@ -208,34 +213,51 @@ int ListInsertAfter (List* list, int position, int value)
 
     list->data[new_elem] = value;
 
-    if (list->size == 0)
-    {
-        list->head = new_elem;
-        list->tail = new_elem;
-        list->next[new_elem] = 0;
-        list->prev[new_elem] = 0;
+// без фиктивного элемента
+//     if (list->size == 0)
+//     {
+//         list->head = new_elem;
+//         list->tail = new_elem;
+//         list->next[new_elem] = 0;
+//         list->prev[new_elem] = 0;
+//
+//         list->size++;
+//         return new_elem;
+//     }
+//
+//     int next_elem = (position == 0) ? list->head : list->next[position];
+//
+//     list->next[new_elem] = next_elem;
+//     list->prev[new_elem] = position;
+//
+//     if (position == 0)
+//         list->head = new_elem;
+//     else
+//         list->next[position] = new_elem;
+//
+//     if (next_elem == 0)
+//         list->tail = new_elem;
+//     else
+//         list->prev[next_elem] = new_elem;
 
-        // list->next[0] = new_elem;
-        // list->prev[0] = new_elem;
 
-        list->size++;
-        return new_elem;
-    }
+// с фиктивным элементом
+// находим следующий элемент, если position == 0 (вставка до головы) ,то new_elem = next[0] = head
+// если вставляем в пустой список, то next_elem = 0;
+    int next_elem = list->next[position];
 
-    int next_elem = (position == 0) ? list->head : list->next[position];
-
+// устанавливаем значение и связи для new_elem
+    list->data[new_elem] = value;
     list->next[new_elem] = next_elem;
     list->prev[new_elem] = position;
 
-    if (position == 0)
-        list->head = new_elem;
-    else
-        list->next[position] = new_elem;
+// меняем связи соседей
+    list->next[position] = new_elem;
+    list->prev[next_elem] = new_elem;
 
-    if (next_elem == 0)
-        list->tail = new_elem;
-    else
-        list->prev[next_elem] = new_elem;
+// обновляем head и tail
+    list->head = list->next[0];
+    list->tail = list->prev[0];
 
     list->size++;
 
@@ -258,20 +280,32 @@ int ListDelete (List* list, int index)
     int left = list->prev[index];
     int right = list->next[index];
 
-    if (left == 0)
-        list->head = right;
-    else
-        list->next[left] = right;
 
-    if (right == 0)
-        list->tail = left;
-    else
-        list->prev[right] = left;
+// без фиктивного элемента
+//     if (left == 0)
+//         list->head = right;
+//     else
+//         list->next[left] = right;
+//
+//     if (right == 0)
+//         list->tail = left;
+//     else
+//         list->prev[right] = left;
 
+// с фиктивным элементом
+// меняем связи соседей
+    list->next[left] = right;
+    list->prev[right] = left;
+
+// прикрепляем удаленный элемент к списку свободных
     list->next[index] = list->free;
     list->prev[index] = -1;
     list->data[index] = POISON;
     list->free = index;
+
+// меняем head и tail
+    list->head = list->next[0];
+    list->tail = list->prev[0];
 
     list->size--;
 
