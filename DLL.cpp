@@ -6,50 +6,50 @@
 
 #define POISON 0xDEAD
 
-bool ListVerify (const List* list)
+int ListVerify (const List* list)
 {
-    if (!list || !list->data || !list->next || !list->prev) return false;
-    if (list->capacity <= 0 || 0 > list->size || list->size > list->capacity) return false;
-    if (list->next[list->tail] != 0 || list->prev[list->head] != 0) return false;
+    if (!list || !list->data || !list->next || !list->prev) return LIST_NULL_PTR;
+    if (list->capacity <= 0 || 0 > list->size || list->size > list->capacity) return LIST_BAD_CAPACITY;
+    if (list->next[list->tail] != 0 || list->prev[list->head] != 0) return LIST_BROKEN_LINKS;
 
     if (list->head < 0 || list->head > list->capacity || list->tail < 0 ||
-        list->tail > list->capacity || list->free < 0 || list->free > list->capacity) return false;
+        list->tail > list->capacity || list->free < 0 || list->free > list->capacity) return LIST_INVALID_INDEX;
 
     if (list->size == 0)
     {
-        if (list->head != 0 || list->tail != 0) return false;
+        if (list->head != 0 || list->tail != 0) return LIST_INCORRECT_VALUE;
     }
     else
     {
-        if (list->head == 0 || list->tail == 0) return false;
+        if (list->head == 0 || list->tail == 0) return LIST_INCORRECT_VALUE;
     }
 
     for (int i = 0; i <= list->capacity; i++)
     {
-        if (list->next[i] < 0  || list->capacity < list->next[i]) return false;
-        if (list->prev[i] < -1 || list->capacity < list->prev[i]) return false;
+        if (list->next[i] < 0  || list->capacity < list->next[i]) return LIST_INVALID_INDEX;
+        if (list->prev[i] < -1 || list->capacity < list->prev[i]) return LIST_INVALID_INDEX;
 
         if (list->data[i] != POISON )
         {
-            if (list->prev[list->next[i]] != i) return false;
-            if (list->next[list->prev[i]] != i) return false;
+            if (list->prev[list->next[i]] != i) return LIST_BROKEN_LINKS;
+            if (list->next[list->prev[i]] != i) return LIST_BROKEN_LINKS;
         }
 
         else if (list->prev[i] == -1 && list->next[i] != 0)
-            if (list->prev[list->next[i]] != -1) return false;
+            if (list->prev[list->next[i]] != -1) return LIST_BROKEN_LINKS;
     }
 
-    if (list->data[0] != POISON ) return false;
+    if (list->data[0] != POISON ) return LIST_INCORRECT_VALUE;
 
     for (int i = 1; i <= list->capacity; i++)
     {
         if (list->prev[i] == -1)
         {
-            if (list->data[i] != POISON) return false;
+            if (list->data[i] != POISON) return LIST_INCORRECT_VALUE;
         }
         else
         {
-            if (list->data[i] == POISON) return false;
+            if (list->data[i] == POISON) return LIST_INCORRECT_VALUE;
         }
     }
 
@@ -63,15 +63,15 @@ bool ListVerify (const List* list)
             count_used +=1;
     }
 
-    if (list->size != count_used) return false;
+    if (list->size != count_used) return LIST_MISSED_ELEM;
 
-    if (list->size + count_free != list->capacity) return false;
+    if (list->size + count_free != list->capacity) return LIST_MISSED_ELEM;
 
 //=============== проверка на циклы и потерю узлов ===============
     int* seen = (int*)calloc(list->capacity + 1, sizeof(int));
 
     if (!seen)
-        return false;
+        return LIST_NULL_PTR;
 
     int next_elem = 0;
     int prev_elem = 0;
@@ -82,8 +82,8 @@ bool ListVerify (const List* list)
 
     for (int i = list->head; i != 0;)
     {
-        if (i < 1 || i > list->capacity || seen[i] != 0 || count_used > list->capacity)
-            return false;
+        if (i < 1 || i > list->capacity) return LIST_INVALID_INDEX;
+        if (seen[i] != 0 || count_used > list->capacity) return LIST_CYCLE_DETECTED;
 
         seen[i] = 1;
 
@@ -91,7 +91,7 @@ bool ListVerify (const List* list)
 
         if (next_elem < 0 || next_elem > list->capacity ||
             (next_elem != 0 && list->prev[next_elem] != i))
-            return false;
+            return LIST_INVALID_INDEX;
 
         prev_elem = i;
         i = next_elem;
@@ -99,8 +99,8 @@ bool ListVerify (const List* list)
         count_used++;
     }
 
-    if (count_used != list->size || prev_elem != list->tail)
-        return false;
+    if (count_used != list->size) return LIST_MISSED_ELEM;
+    if (prev_elem != list->tail) return LIST_INVALID_INDEX;
 
 // считаем свободные элементы и проверяем на циклы список свободных элементов
 
@@ -108,27 +108,26 @@ bool ListVerify (const List* list)
 
     for (int i = list->free; i != 0;)
     {
-        if (i < 1 || i > list->capacity || seen[i] != 0 ||
-            list->prev[i] != -1)
-            return false;
+        if (i < 1 || i > list->capacity) return LIST_INVALID_INDEX;
+        if (seen[i] != 0 || list->prev[i] != -1) return LIST_CYCLE_DETECTED;
 
         seen[i] = 2;
 
         next_elem = list->next[i];
 
         if (next_elem < 0 || next_elem > list->capacity)
-            return false;
+            return LIST_INVALID_INDEX;
 
         count_free++;
         i = next_elem;
     }
 
     if (count_used + count_free != list->capacity)
-        return false;
+        return LIST_MISSED_ELEM;
 
     free(seen);
 
-    return true;
+    return LIST_OK;
 }
 
 int ListInit (List* list, int capacity)
@@ -167,8 +166,11 @@ int ListInit (List* list, int capacity)
         list->data[i] = POISON;
     }
 
+    LIST_DUMP(list, "AFTER INIT");
+
     #ifdef ON_VERIFY
-        if (!ListVerify(list)) return -1;
+        int err = ListVerify(list);
+        if (err < 0) return err;
     #endif
 
     return 0;
@@ -201,12 +203,15 @@ void ListDump (const List* list, const char* log_file_name)
 
 int ListInsertAfter (List* list, int position, int value)
 {
+    LIST_DUMP(list, "BEFORE INSERT (%d, %d)", position, value);
+
     #ifdef ON_VERIFY
-        if (!ListVerify(list)) return -1;
+        int err = ListVerify(list);
+        if (err < 0) return err;
     #endif
 
     if (list->free == 0)
-        return -1;
+        return LIST_OVERFLOW;
 
     int new_elem = list->free;
     list->free = list->next[list->free];
@@ -261,8 +266,11 @@ int ListInsertAfter (List* list, int position, int value)
 
     list->size++;
 
+    LIST_DUMP(list, "AFTER INSERT (%d, %d)", position, value);
+
     #ifdef ON_VERIFY
-        if (!ListVerify(list)) return -1;
+        err = ListVerify(list);
+        if (err < 0) return err;
     #endif
 
     return new_elem;
@@ -270,12 +278,15 @@ int ListInsertAfter (List* list, int position, int value)
 
 int ListDelete (List* list, int index)
 {
+    LIST_DUMP(list, "BEFORE DELETE (%d)", index);
+
     #ifdef ON_VERIFY
-        if (!ListVerify(list)) return -1;
+        int err = ListVerify(list);
+        if (err < 0) return err;
     #endif
 
     if (index < 1 || list->capacity < index || list->data[index] == POISON)
-        return -1;
+        return LIST_INVALID_INDEX;
 
     int left = list->prev[index];
     int right = list->next[index];
@@ -309,8 +320,11 @@ int ListDelete (List* list, int index)
 
     list->size--;
 
+    LIST_DUMP(list, "AFTER DELETE (%d)", index);
+
     #ifdef ON_VERIFY
-        if (!ListVerify(list)) return -1;
+        err = ListVerify(list);
+        if (err < 0) return err;
     #endif
 
     if (right)
@@ -325,31 +339,20 @@ int main()
 {
     List list1 ={};
     ListInit(&list1, 10);
-    int err = ListInsertAfter (&list1, 0, 10);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 1, 20);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 2, 30);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 3, 40);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 4, 50);
-    printf("err = %d\n", err);
-
-    err = ListInsertAfter(&list1, 3, 35);
-    printf("err = %d\n", err);
-    err = ListDelete(&list1, 3);
-    printf("err = %d\n", err);
-    err = ListDelete(&list1, 5);
-    printf("err = %d\n", err);
-
-    err = ListInsertAfter(&list1, 4, 60);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 6, 70);
-    printf("err = %d\n", err);
-    err = ListInsertAfter(&list1, 1, 80);
-    printf("err = %d\n", err);
-    printf("err = %d\n", err);
-    ListDump(&list1, "DLL_log");
+    ListInsertAfter (&list1, 0, 10);
+    ListInsertAfter(&list1, 1, 20);
+    ListInsertAfter(&list1, 2, 30);
+    ListInsertAfter(&list1, 3, 40);
+    ListInsertAfter(&list1, 4, 50);
+    ListInsertAfter(&list1, 3, 35);
+    ListDelete(&list1, 3);
+    ListDelete(&list1, 5);
+    ListInsertAfter(&list1, 4, 60);;
+    ListInsertAfter(&list1, 6, 70);
+    ListInsertAfter(&list1, 1, 80);
+    ListInsertAfter(&list1, 7, 90);
+    ListDelete(&list1, 1);
+    ListDelete(&list1, 6);
+    //printf("err = %d\n", err);
     return 0;
 }
